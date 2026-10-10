@@ -45,6 +45,8 @@ let requests: [[String: Any]] = [
     ["jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": ["name": "inspect_boundary", "arguments": ["path": CommandLine.arguments[2]]]],
 ]
 try server.run()
+let serverTimeout = DispatchWorkItem { if server.isRunning { server.terminate() } }
+DispatchQueue.global().asyncAfter(deadline: .now() + 20, execute: serverTimeout)
 for request in requests {
     input.fileHandleForWriting.write(try JSONSerialization.data(withJSONObject: request))
     input.fileHandleForWriting.write(Data([10]))
@@ -52,6 +54,7 @@ for request in requests {
 try input.fileHandleForWriting.close()
 let serverOutput = output.fileHandleForReading.readDataToEndOfFile()
 server.waitUntilExit()
+serverTimeout.cancel()
 var responses: [Int: [String: Any]] = [:]
 for line in String(decoding: serverOutput, as: UTF8.self).split(separator: "\n") {
     if let response = try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],

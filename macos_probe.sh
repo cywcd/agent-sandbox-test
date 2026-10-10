@@ -26,5 +26,6 @@ swiftc "$(dirname "$0")/MacProbe.swift" -o "$app/Contents/MacOS/YcodeNativeProbe
 codesign --force --sign - --entitlements "$probe_root/probe.entitlements" "$app"
 codesign -dvvv --entitlements - "$app" 2>&1 | grep -q 'com.apple.security.app-sandbox'
 printf unchanged > "$probe_root/outside-marker.txt"
-"$app/Contents/MacOS/YcodeNativeProbe" /usr/bin/python3 "$probe_root/outside-marker.txt"
+python_runtime="$(xcrun --find python3)"
+"$app/Contents/MacOS/YcodeNativeProbe" "$python_runtime" "$probe_root/outside-marker.txt"
 test "$(cat "$probe_root/outside-marker.txt")" = unchanged
