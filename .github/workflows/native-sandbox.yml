@@ -1,0 +1,40 @@
+name: Native sandbox sample verification
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe native kernel restrictions and sample toolchains
+        run: python3 linux_landlock.py
+      - name: Probe namespace availability
+        shell: bash
+        run: |
+          set -o pipefail
+          uname -a
+          if unshare --user --map-root-user --mount --net --pid --fork --mount-proc --kill-child true; then
+            echo 'NAMESPACE_PROBE=available'
+          else
+            echo 'NAMESPACE_PROBE=unavailable; full Linux isolation is not verified on this runner'
+          fi
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Probe signed Apple App Sandbox and child inheritance
+        run: bash macos_probe.sh
