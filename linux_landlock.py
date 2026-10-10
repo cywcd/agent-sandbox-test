@@ -145,13 +145,15 @@ sys.exit(0 if all(results.values()) else 1)
         checks["native_launcher_read_and_network_boundary"] = confined.returncode == 0 and json.loads(confined.stdout)["outside_read_denied"] and (workspace / "confined.txt").exists()
         if confined.returncode:
             print(confined.stderr, file=sys.stderr)
-        server = subprocess.Popen([sys.executable, str(pathlib.Path(__file__).with_name("mcp_write_server.py"))], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        fixture = pathlib.Path(__file__).with_name("mcp_write_server.py").resolve()
+        server = subprocess.Popen([sys.executable, str(launcher), "--workspace", str(workspace), "--read-only", sys.prefix, "--read-only", str(fixture.parent), "--", str(pathlib.Path(sys.executable).resolve()), str(fixture)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         try:
             requests = [
                 {"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}},
                 {"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
                 {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "write_sample", "arguments": {"path": str(workspace / "mcp.txt")}}},
                 {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "write_sample", "arguments": {"path": str(outside / "mcp.txt")}}},
+                {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "inspect_boundary", "arguments": {"path": str(outside_file)}}},
             ]
             output, _ = server.communicate("".join(json.dumps(request) + "\n" for request in requests), timeout=10)
             responses = {item["id"]: item["result"] for item in map(json.loads, output.splitlines())}
@@ -160,6 +162,7 @@ sys.exit(0 if all(results.values()) else 1)
             denied_result = responses[3]
             checks["mcp_workspace_write"] = not allowed_result.get("isError") and (workspace / "mcp.txt").read_text() == "mcp"
             checks["mcp_outside_denied"] = denied_result.get("isError") is True and not (outside / "mcp.txt").exists()
+            checks["mcp_read_and_network_denied"] = all(json.loads(responses[4]["content"][0]["text"]).values())
         finally:
             server.kill()
             server.wait(timeout=5)
