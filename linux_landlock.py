@@ -124,6 +124,27 @@ def main():
         child = subprocess.run([sys.executable, "-c", "import pathlib,sys; pathlib.Path(sys.argv[1]).write_text('bad')", str(outside / "child.txt")], capture_output=True, text=True)
         checks["child_inherits_denial"] = child.returncode != 0 and not (outside / "child.txt").exists()
         checks["outside_unchanged"] = outside_file.read_text(encoding="utf8") == "unchanged"
+        launcher = pathlib.Path(__file__).with_name("linux_process.py")
+        confined_code = """import json,pathlib,socket,sys
+results = {}
+pathlib.Path('confined.txt').write_text('ok')
+try:
+    pathlib.Path(sys.argv[1]).read_text()
+    results['outside_read_denied'] = False
+except PermissionError:
+    results['outside_read_denied'] = True
+try:
+    socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    results['udp_socket_denied'] = False
+except PermissionError:
+    results['udp_socket_denied'] = True
+print(json.dumps(results))
+sys.exit(0 if all(results.values()) else 1)
+"""
+        confined = subprocess.run([sys.executable, str(launcher), "--workspace", str(workspace), "--read-only", sys.prefix, "--", str(pathlib.Path(sys.executable).resolve()), "-c", confined_code, str(outside_file)], capture_output=True, text=True, timeout=20)
+        checks["native_launcher_read_and_network_boundary"] = confined.returncode == 0 and json.loads(confined.stdout)["outside_read_denied"] and (workspace / "confined.txt").exists()
+        if confined.returncode:
+            print(confined.stderr, file=sys.stderr)
         server = subprocess.Popen([sys.executable, str(pathlib.Path(__file__).with_name("mcp_write_server.py"))], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         try:
             requests = [
