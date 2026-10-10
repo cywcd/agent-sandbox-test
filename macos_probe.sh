@@ -1,7 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 probe_root="$(mktemp -d)"
-trap 'rm -rf "$probe_root"' EXIT
+outside_root="$(mktemp -d "$HOME/ycode-native-outside.XXXXXX")"
+trap 'rm -rf "$probe_root" "$outside_root"' EXIT
 app="$probe_root/YcodeNativeProbe.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$(dirname "$0")/mcp_write_server.py" "$app/Contents/Resources/"
@@ -25,7 +26,7 @@ PLIST
 swiftc "$(dirname "$0")/MacProbe.swift" -o "$app/Contents/MacOS/YcodeNativeProbe"
 codesign --force --sign - --entitlements "$probe_root/probe.entitlements" "$app"
 codesign -dvvv --entitlements - "$app" 2>&1 | grep -q 'com.apple.security.app-sandbox'
-printf unchanged > "$probe_root/outside-marker.txt"
+printf unchanged > "$outside_root/outside-marker.txt"
 python_runtime="$(xcrun --find python3)"
-"$app/Contents/MacOS/YcodeNativeProbe" "$python_runtime" "$probe_root/outside-marker.txt"
-test "$(cat "$probe_root/outside-marker.txt")" = unchanged
+"$app/Contents/MacOS/YcodeNativeProbe" "$python_runtime" "$outside_root/outside-marker.txt"
+test "$(cat "$outside_root/outside-marker.txt")" = unchanged

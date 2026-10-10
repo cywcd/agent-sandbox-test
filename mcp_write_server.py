@@ -24,10 +24,11 @@ for line in sys.stdin:
                 except PermissionError:
                     checks["outside_read_denied"] = True
                 try:
-                    socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                    checks["udp_socket_denied"] = False
+                    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe_socket:
+                        probe_socket.sendto(b"native-sandbox-probe", ("127.0.0.1", 9))
+                    checks["udp_network_denied"] = False
                 except PermissionError:
-                    checks["udp_socket_denied"] = True
+                    checks["udp_network_denied"] = True
                 result = {"content": [{"type": "text", "text": json.dumps(checks)}]}
                 print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": result}), flush=True)
                 continue

@@ -68,6 +68,7 @@ checks["mcp_outside_write_denied"] = responses[2]?["isError"] as? Bool == true &
 if let content = responses[3]?["content"] as? [[String: Any]], let text = content.first?["text"] as? String,
    let boundary = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Bool] {
     checks["mcp_read_and_network_denied"] = boundary.values.allSatisfy { $0 }
+    checks["mcp_boundary_details"] = boundary
 } else {
     checks["mcp_read_and_network_denied"] = false
 }
