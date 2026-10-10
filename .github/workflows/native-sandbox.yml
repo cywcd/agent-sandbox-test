@@ -15,17 +15,20 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Probe native kernel restrictions and sample toolchains
         run: python3 linux_landlock.py
       - name: Probe namespace availability
+        if: always()
         shell: bash
         run: |
           set -o pipefail
           uname -a
           if unshare --user --map-root-user --mount --net --pid --fork --mount-proc --kill-child true; then
-            echo 'NAMESPACE_PROBE=available'
+            echo "NAMESPACE_PROBE=available"
           else
-            echo 'NAMESPACE_PROBE=unavailable; full Linux isolation is not verified on this runner'
+            echo "NAMESPACE_PROBE=unavailable; namespace isolation is not verified on this runner"
           fi
   macos:
     strategy:
@@ -36,5 +39,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Probe signed Apple App Sandbox and child inheritance
         run: bash macos_probe.sh
