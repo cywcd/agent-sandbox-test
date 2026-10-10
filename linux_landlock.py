@@ -180,11 +180,15 @@ sys.exit(0 if all(results.values()) else 1)
             if not shutil.which(command[0]):
                 results[name] = "unavailable"
                 continue
-            result = subprocess.run(command, cwd=workspace, env=env, capture_output=True, text=True, timeout=90)
+            target = pathlib.Path(shutil.which(command[0])).resolve()
+            launch = [sys.executable, str(launcher), "--workspace", str(workspace), "--read-only", sys.prefix, "--read-only", str(target.parent.parent), "--", str(target), *command[1:]]
+            result = subprocess.run(launch, cwd=workspace, env=env, capture_output=True, text=True, timeout=90)
             results[name] = "passed" if result.returncode == 0 and (output is None or (workspace / output).exists()) else f"failed:{result.returncode}:{result.stderr[-200:]}"
             if results[name] == "passed" and name in ("rust", "java"):
                 runtime = [str(workspace / "rust-sample")] if name == "rust" else ["java", "Sample"]
-                executed = subprocess.run(runtime, cwd=workspace, env=env, capture_output=True, text=True, timeout=30)
+                runtime_target = pathlib.Path(shutil.which(runtime[0])).resolve()
+                runtime_launch = [sys.executable, str(launcher), "--workspace", str(workspace), "--read-only", sys.prefix, "--read-only", str(runtime_target.parent.parent), "--", str(runtime_target), *runtime[1:]]
+                executed = subprocess.run(runtime_launch, cwd=workspace, env=env, capture_output=True, text=True, timeout=30)
                 results[name] = "passed" if executed.returncode == 0 and (workspace / f"{name}.txt").exists() else f"failed:run:{executed.returncode}:{executed.stderr[-200:]}"
         print(json.dumps({"platform": sys.platform, "machine": os.uname().machine, "landlock_abi": abi, "checks": checks, "toolchains": results}, sort_keys=True))
         if not all(checks.values()):

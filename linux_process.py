@@ -101,9 +101,26 @@ def main():
     if os.getpgrp() != os.getpid():
         os.setsid()
     cache = pathlib.Path(workspace) / ".native-cache"
-    cache.mkdir(exist_ok=True)
     temp = cache / "tmp"
-    temp.mkdir(exist_ok=True)
+    # Never follow project-controlled cache symlinks before confinement.
+    workspace_fd = os.open(workspace, os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        try:
+            os.mkdir(".native-cache", mode=0o700, dir_fd=workspace_fd)
+        except FileExistsError:
+            pass
+        cache_fd = os.open(".native-cache", os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=workspace_fd)
+        try:
+            try:
+                os.mkdir("tmp", mode=0o700, dir_fd=cache_fd)
+            except FileExistsError:
+                pass
+            temp_fd = os.open("tmp", os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=cache_fd)
+            os.close(temp_fd)
+        finally:
+            os.close(cache_fd)
+    finally:
+        os.close(workspace_fd)
     env = {key: value for key, value in os.environ.items() if key in ("PATH", "LANG", "LC_ALL", "JAVA_HOME", "GOROOT")}
     env["PATH"] = str(pathlib.Path(command[0]).parent) + os.pathsep + env.get("PATH", "")
     env.update({"HOME": str(cache), "TMPDIR": str(temp), "CI": "1", "GIT_TERMINAL_PROMPT": "0", "GOCACHE": str(cache / "go"), "GOPATH": str(cache / "go-path"), "CARGO_HOME": str(cache / "cargo"), "PYTHONDONTWRITEBYTECODE": "1"})
