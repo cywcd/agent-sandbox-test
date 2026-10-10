@@ -32,7 +32,7 @@ ACCESS_MAKE_SYM = 1 << 12
 ACCESS_REFER = 1 << 13
 ACCESS_TRUNCATE = 1 << 14
 READ = ACCESS_EXECUTE | ACCESS_READ_FILE | ACCESS_READ_DIR
-WRITE = sum(1 << bit for bit in range(1, 2)) | sum(1 << bit for bit in range(4, 13))
+WRITE = ACCESS_WRITE_FILE | sum(1 << bit for bit in range(4, 13))
 
 
 class RulesetAttr(ctypes.Structure):
@@ -90,6 +90,12 @@ def main():
         outside = root / "outside"
         workspace.mkdir()
         outside.mkdir()
+        (workspace / ".tmp").mkdir()
+        rustc = shutil.which("rustc")
+        if shutil.which("rustup"):
+            located = subprocess.run(["rustup", "which", "rustc"], capture_output=True, text=True, timeout=10)
+            if located.returncode == 0:
+                rustc = located.stdout.strip()
         outside_file = outside / "protected.txt"
         outside_file.write_text("unchanged", encoding="utf8")
         (workspace / "escape").symlink_to(outside, target_is_directory=True)
@@ -120,24 +126,29 @@ def main():
         checks["outside_unchanged"] = outside_file.read_text(encoding="utf8") == "unchanged"
         server = subprocess.Popen([sys.executable, str(pathlib.Path(__file__).with_name("mcp_write_server.py"))], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         try:
-            def mcp_write(path, identifier):
-                server.stdin.write(json.dumps({"jsonrpc": "2.0", "id": identifier, "method": "tools/call", "params": {"name": "write_sample", "arguments": {"path": str(path)}}}) + "\n")
-                server.stdin.flush()
-                return json.loads(server.stdout.readline())["result"]
-            allowed_result = mcp_write(workspace / "mcp.txt", 1)
-            denied_result = mcp_write(outside / "mcp.txt", 2)
+            requests = [
+                {"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}},
+                {"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "write_sample", "arguments": {"path": str(workspace / "mcp.txt")}}},
+                {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "write_sample", "arguments": {"path": str(outside / "mcp.txt")}}},
+            ]
+            output, _ = server.communicate("".join(json.dumps(request) + "\n" for request in requests), timeout=10)
+            responses = {item["id"]: item["result"] for item in map(json.loads, output.splitlines())}
+            checks["mcp_handshake"] = responses[0]["serverInfo"]["name"] == "native-write-probe" and responses[1]["tools"][0]["name"] == "write_sample"
+            allowed_result = responses[2]
+            denied_result = responses[3]
             checks["mcp_workspace_write"] = not allowed_result.get("isError") and (workspace / "mcp.txt").read_text() == "mcp"
             checks["mcp_outside_denied"] = denied_result.get("isError") is True and not (outside / "mcp.txt").exists()
         finally:
             server.kill()
             server.wait(timeout=5)
         env = os.environ.copy()
-        env.update({"HOME": str(workspace), "TMPDIR": str(workspace), "GOCACHE": str(workspace / "go-cache"), "GOPATH": str(workspace / "go-path"), "GOMODCACHE": str(workspace / "go-mod-cache")})
+        env.update({"HOME": str(workspace), "TMPDIR": str(workspace / ".tmp"), "GOCACHE": str(workspace / "go-cache"), "GOPATH": str(workspace / "go-path"), "GOMODCACHE": str(workspace / "go-mod-cache"), "CARGO_HOME": str(workspace / "cargo-home")})
         toolchains = {
             "python": ([sys.executable, "-c", "open('python.txt', 'w').write('ok')"], "python.txt"),
             "node": (["node", "-e", "require('fs').writeFileSync('node.txt','ok')"], "node.txt"),
             "go": (["go", "test", "./..."], None),
-            "rust": (["rustc", "sample.rs", "-o", "rust-sample"], "rust-sample"),
+            "rust": ([rustc or "rustc", "sample.rs", "-o", "rust-sample"], "rust-sample"),
             "java": (["javac", "Sample.java"], "Sample.class"),
         }
         results = {}
@@ -147,6 +158,10 @@ def main():
                 continue
             result = subprocess.run(command, cwd=workspace, env=env, capture_output=True, text=True, timeout=90)
             results[name] = "passed" if result.returncode == 0 and (output is None or (workspace / output).exists()) else f"failed:{result.returncode}:{result.stderr[-200:]}"
+            if results[name] == "passed" and name in ("rust", "java"):
+                runtime = [str(workspace / "rust-sample")] if name == "rust" else ["java", "Sample"]
+                executed = subprocess.run(runtime, cwd=workspace, env=env, capture_output=True, text=True, timeout=30)
+                results[name] = "passed" if executed.returncode == 0 and (workspace / f"{name}.txt").exists() else f"failed:run:{executed.returncode}:{executed.stderr[-200:]}"
         print(json.dumps({"platform": sys.platform, "machine": os.uname().machine, "landlock_abi": abi, "checks": checks, "toolchains": results}, sort_keys=True))
         if not all(checks.values()):
             raise RuntimeError("Landlock boundary failed")
