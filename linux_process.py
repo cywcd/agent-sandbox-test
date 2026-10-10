@@ -55,7 +55,7 @@ def restrict(workspace, read_roots):
     attr = Ruleset(FS, 3, 3)
     ruleset = checked(libc.syscall(444, ctypes.byref(attr), ctypes.sizeof(attr), 0), "landlock_create_ruleset")
     try:
-        for path in ["/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc/ld.so.cache", "/etc/alternatives", *read_roots]:
+        for path in ["/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc/ld.so.cache", "/etc/alternatives", "/etc/ssl/openssl.cnf", *read_roots]:
             if os.path.exists(path):
                 resolved = str(pathlib.Path(path).resolve(strict=True))
                 rights = READ if os.path.isdir(resolved) else (1 << 0) | (1 << 2)

@@ -187,7 +187,8 @@ sys.exit(0 if all(results.values()) else 1)
             if results[name] == "passed" and name in ("rust", "java"):
                 runtime = [str(workspace / "rust-sample")] if name == "rust" else ["java", "Sample"]
                 runtime_target = pathlib.Path(shutil.which(runtime[0])).resolve()
-                runtime_launch = [sys.executable, str(launcher), "--workspace", str(workspace), "--read-only", sys.prefix, "--read-only", str(runtime_target.parent.parent), "--", str(runtime_target), *runtime[1:]]
+                runtime_root = workspace if runtime_target.is_relative_to(workspace) else runtime_target.parent.parent
+                runtime_launch = [sys.executable, str(launcher), "--workspace", str(workspace), "--read-only", sys.prefix, "--read-only", str(runtime_root), "--", str(runtime_target), *runtime[1:]]
                 executed = subprocess.run(runtime_launch, cwd=workspace, env=env, capture_output=True, text=True, timeout=30)
                 results[name] = "passed" if executed.returncode == 0 and (workspace / f"{name}.txt").exists() else f"failed:run:{executed.returncode}:{executed.stderr[-200:]}"
         print(json.dumps({"platform": sys.platform, "machine": os.uname().machine, "landlock_abi": abi, "checks": checks, "toolchains": results}, sort_keys=True))
